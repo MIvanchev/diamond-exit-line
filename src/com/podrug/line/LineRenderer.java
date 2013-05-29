@@ -26,7 +26,9 @@ package com.podrug.line;
 import com.podrug.line.util.FPMath;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.awt.Graphics2D;
+import java.util.Arrays;
 
 /**
  * This static class implements a rasterizer for aliased lines based on the
@@ -188,15 +190,16 @@ public final class LineRenderer
         int positionX = (int) Math.floor(minX);
         int positionY = (int) Math.floor(minY);
 
-        BufferedImage image =
-                new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        int[] pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+        Arrays.fill(pixels, 0);
         for (int j = 0, y = positionY; j < height; j++, y++)
         {
             for (int i = 0, x = positionX; i < width; i++, x++)
             {
                 int color = graphics.getColor().getRGB();
                 if (includePixel(x, y))
-                    image.setRGB(i, j, color);
+                    pixels[j * width + i] = color;
             }
         }
 
