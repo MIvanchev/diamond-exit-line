@@ -25,9 +25,13 @@ package com.podrug.line;
 
 import com.podrug.line.util.FPMath;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.PathIterator;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.awt.BasicStroke;
+import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Shape;
 import java.util.Arrays;
 
 /**
@@ -46,6 +50,10 @@ import java.util.Arrays;
  */
 public final class LineRenderer
 {
+    /***************************************************************************
+     * HELPER TYPES                                                            *
+     **************************************************************************/
+
     /**
      * Encapsulates a point of the Euclidean Plane with coordinates encoded as
      * fixed-point numbers.
@@ -102,116 +110,192 @@ public final class LineRenderer
      * MEMBERS                                                                 *
      **************************************************************************/
 
+    static LineSampler sampler = new LineSampler();
     static final Point p1 = new Point();
     static final Point p2 = new Point();
+    static int width;
+    static boolean xMajor;
+    static long length;
     static long a;
     static long b;
     static long c;
-    static boolean xMajor;
+    static long pathLength;
     static final AffineTransform identity = new AffineTransform();
+
+    /**
+     * TODO
+     */
+    public static void render(Graphics2D graphics, Shape shape, float width, float[] dashArray, float dashPhase)
+    {
+	PathIterator iterator = shape.getPathIterator(null);
+	double[] coords = new double[6];
+	while (iterator.isDone())
+	{
+	    int type = iterator.currentSegment(coords);
+	    if (type != PathIterator.SEG_MOVETO
+		    && type != PathIterator.SEG_LINETO
+		    && type != PathIterator.SEG_CLOSE)
+	    {
+		throw new IllegalArgumentException("The specified shape must consist only of straight line segments.");
+	    }
+	}
+	double[] first = new double[2];
+	double[] previous = new double[2];
+	while (iterator.isDone())
+	{
+	    int type = iterator.currentSegment(coords);
+	    switch (type)
+	    {
+	    case PathIterator.SEG_MOVETO:
+                first[0] = coords[0];
+                first[1] = coords[1];
+                break;
+
+            case PathIterator.SEG_CLOSE:
+                coords[0] = first[0];
+                coords[1] = first[1];
+                //break;
+
+            case PathIterator.SEG_LINETO:
+
+
+                break;
+	    }
+	}
+    }
 
     /**
      * Renders the line with the specified coordinates to the specified graphics
      * context.
      */
-    public static void render(Graphics2D graphics, double x1, double y1, double x2, double y2)
+    public static void render(
+	    		Graphics2D graphics,
+	    		double x1,
+	    		double y1,
+	    		double x2,
+	    		double y2,
+	    		Color strokeColor,
+	    		float strokeWidth,
+	    		float[] dashArray,
+	    		float dashPhase
+	    		)
     {
-        // Set an identity transform to the graphics context and transform the
+        if (width < 0)
+            throw new IllegalArgumentException("The width cannot be negative.");
+
+	// Set an identity transform to the graphics context and transform the
         // end points manually.
         //
 
         AffineTransform transform = graphics.getTransform();
         graphics.setTransform(identity);
 
-        double tx = x1 * transform.getScaleX()
-                    + y1 * transform.getShearX()
+        double tx = x1 * transform.getScaleX() + y1 * transform.getShearX()
                     + transform.getTranslateX();
-        double ty = x1 * transform.getShearY()
-                    + y1 * transform.getScaleY()
+        double ty = x1 * transform.getShearY() + y1 * transform.getScaleY()
                     + transform.getTranslateY();
         x1 = tx;
         y1 = ty;
 
-        tx = x2 * transform.getScaleX()
-                + y2 * transform.getShearX()
+        tx = x2 * transform.getScaleX() + y2 * transform.getShearX()
                 + transform.getTranslateX();
-        ty = x2 * transform.getShearY()
-                + y2 * transform.getScaleY()
+        ty = x2 * transform.getShearY() + y2 * transform.getScaleY()
                 + transform.getTranslateY();
         x2 = tx;
         y2 = ty;
 
-        // Calculate the bounding rectangle.
+        // Classify, offset to account for the width and extract the bounding box.
         //
+
+        xMajor = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+ 
+        width = (int) Math.max(Math.round(strokeWidth), 1);
+
+        if (xMajor)
+        {
+            y1 -= (width - 1) / 2;
+            y2 -= (width - 1) / 2;
+        }
+        else
+        {
+            x1 -= (width - 1) / 2;
+            x2 -= (width - 1) / 2;
+        }
 
         double minX = Math.min(x1, x2);
         double minY = Math.min(y1, y2);
         double maxX = Math.max(x1, x2);
         double maxY = Math.max(y1, y2);
 
-        // Copy the end points of the line.
+        // Offset the line end points half a pixel to the right and to the
+        // bottom. Thus, a line coincident with the border between 2 pixel rows
+        // will highly the bottom row.
         //
 
         double offset = 0.5;
         p1.setLocation(FPMath.toFixed(x1 + offset), FPMath.toFixed(y1 + offset));
         p2.setLocation(FPMath.toFixed(x2 + offset), FPMath.toFixed(y2 + offset));
 
-        // Calculate the slope and extract the standard form.
+        // Calculate the length and extract the standard form.
         //
+
+        length = FPMath.sqrt(FPMath.sqr(p2.x - p1.x) + FPMath.sqr(p2.y - p1.y));
 
         if (p2.x != p1.x)
         {
             a = FPMath.div(p2.y - p1.y, p2.x - p1.x);
             b = -FPMath.ONE;
             c = p1.y - FPMath.mul(a, p1.x);
-            xMajor = a >= -FPMath.ONE && a <= FPMath.ONE;
         }
         else
         {
             a = FPMath.ONE;
             b = 0;
             c = p1.x;
-            xMajor = false;
         }
-
-        System.out.println(String.format("L: %f, %f, %f, %f", x1, y1, x2, y2));
-        System.out.println(String.format(
-                            "Std. form: %f * x + %f * y + %f = 0 (%s-major)",
-                            FPMath.toDouble(a),
-                            FPMath.toDouble(b),
-                            FPMath.toDouble(c),
-                            xMajor ? "x" : "y"));
 
         // Rasterize the line and then restore the graphics context transform.
         //
 
-        int width = (int) (Math.ceil(maxX) - Math.floor(minX)) + 1;
-        int height = (int) (Math.ceil(maxY) - Math.floor(minY)) + 1;
+        int bufferWidth = (int) (Math.ceil(maxX) - Math.floor(minX)) + (!xMajor ? width : 1);
+        int bufferHeight = (int) (Math.ceil(maxY) - Math.floor(minY)) + (xMajor ? width : 1);
         int positionX = (int) Math.floor(minX);
         int positionY = (int) Math.floor(minY);
 
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        int[] pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-        Arrays.fill(pixels, 0);
-        for (int j = 0, y = positionY; j < height; j++, y++)
+        sampler.setColor(strokeColor);
+        sampler.setDashArray(FPMath.toFixed(dashArray));
+        sampler.setDashPhase(FPMath.toFixed(dashPhase));
+        sampler.setBufferDimensions(bufferWidth, bufferHeight);
+        for (int j = 0, y = positionY; j < bufferHeight; j++, y++)
         {
-            for (int i = 0, x = positionX; i < width; i++, x++)
+            for (int i = 0, x = positionX; i < bufferWidth; i++, x++)
             {
-                int color = graphics.getColor().getRGB();
-                if (includePixel(x, y))
-                    pixels[j * width + i] = color;
+        	if (!belongsToRepresentation(x, y))
+        	    continue;
+        	
+        	for (int index = 0; index < width; index++)
+        	{
+        	    if (xMajor)
+        		sampler.sample(i, j + index, calculateDistance(x, y + index), 0);
+        	    else
+        		sampler.sample(i + index, j, calculateDistance(x + index, y), 0);
+        	}
             }
         }
 
-        graphics.drawImage(image, null, positionX, positionY);
+        sampler.drawBuffer(graphics, null, positionX, positionY);
         graphics.setTransform(transform);
     }
 
     /**
      * Returns true if the pixel whose top-left corner is given by the specified
      * coordinates is part of the line's representation, false otherwise.
+     * 
+     * The pixel will belong to the line's representation if and only if the
+     * line has a common point with the diamond region around the pixel's center
+     * as governed by implemented specification. 
      */
-    static boolean includePixel(int x, int y)
+    static boolean belongsToRepresentation(int x, int y)
     {
         // Check whether the pixel is too far away from the line to be part of
         // it.
@@ -245,7 +329,7 @@ public final class LineRenderer
                 { points[0], points[3] },    // 0
                 { points[3], points[1] },    // 1
                 { points[1], points[2] },    // 2
-                { points[2], points[0] }    // 3
+                { points[2], points[0] }     // 3
             };
 
         if (p2.equals(points[3])
@@ -367,5 +451,17 @@ public final class LineRenderer
         long denominator = FPMath.mul(a, a) + FPMath.mul(b, b);
 
         return FPMath.mul(numenator, numenator) > FPMath.mul(FPMath.QUARTER, denominator);
+    }
+
+    /**
+     * TODO
+     */
+    static long calculateDistance(int x, int y)
+    {
+	long cx = FPMath.toFixed(x) + FPMath.HALF;
+	long cy = FPMath.toFixed(y) + FPMath.HALF;
+	long numenator = FPMath.mul(cx - p1.x, p2.x - p1.x)
+				+ FPMath.mul(cy - p1.y, p2.y - p1.y);
+	return FPMath.div(numenator, length);
     }
 }

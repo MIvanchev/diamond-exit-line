@@ -35,11 +35,14 @@ public final class FPMath
      **************************************************************************/
 
     /**
-     * The number of bits used for the fraction of fixed-point numbers.
-     *
-     * This constant should in the range [0; 31].
+     * The number of bits used for the integer part of fixed-point numbers.
      */
-    public static final int FRACTION_BITS = 30;
+    public static final int INTEGER_BITS = 34;
+
+    /**
+     * The number of bits used for the fraction of fixed-point numbers.
+     */
+    public static final int FRACTION_BITS = Long.SIZE - INTEGER_BITS;
 
     /**
      * The multiplier used to convert a floating point number to a fixed-point
@@ -75,26 +78,6 @@ public final class FPMath
     }
 
     /**
-     * Converts the specified floating point number to its fixed-point
-     * representation.
-     */
-    public static long toFixed(double number)
-    {
-        long intResult = (long) number << FRACTION_BITS;
-        long fraResult = (long) ((number - (long) number) * FRACTION_MULTIPLIER);
-        return intResult + fraResult;
-    }
-
-    /**
-     * Converts the specified fixed-point number to its floating point
-     * representation.
-     */
-    public static double toDouble(long number)
-    {
-        return (double) number / FRACTION_MULTIPLIER;
-    }
-
-    /**
      * Multiplies two fixed point values and returns the result.
      */
     public static long mul(long a, long b)
@@ -119,5 +102,124 @@ public final class FPMath
         long intResult = ((intA != 0) ? ((ONE << FRACTION_BITS) / (b / intA)) : 0);
         long fraResult = (fraA << FRACTION_BITS) / b;
         return intResult + fraResult;
+    }
+
+    /**
+     * Returns the squares of the specified number. 
+     */
+    public static long sqr(long number)
+    {
+	return FPMath.mul(number, number);
+    }
+    
+    /**
+     * Returns the square root of the specified number.
+     * 
+     * For the moment, the method converts the argument to its floating-point
+     * representation, calculates the square root using the
+     * {@link Math.sqrt(double) Math.sqrt} method and then returns the
+     * fixed-point equivalent of this value. This implementation is only a
+     * placeholder and will be changed as soon as a more suitable algorithm has
+     * been selected. 
+     */
+    public static long sqrt(long number)
+    {
+	if (number < 0)
+	    throw new IllegalArgumentException("Number must be positive or 0.");
+
+	return toFixed(Math.sqrt(toDouble(number)));
+    }
+
+    /***************************************************************************
+     * CONVERSION FUNCTIONS                                                    *
+     **************************************************************************/
+
+    /**
+     * Converts the specified floating point number to its fixed-point
+     * representation.
+     */
+    public static long toFixed(double number)
+    {
+        long intResult = (long) number << FRACTION_BITS;
+        long fraResult = (long) ((number - (long) number) * FRACTION_MULTIPLIER);
+        return intResult + fraResult;
+    }
+
+    /**
+     * Converts the specified array of floating point numbers to an array of
+     * fixed-point numbers by converting each number separately; the
+     * function returns null if the argument is null.
+     */
+    public static long[] toFixed(float[] numbers)
+    {
+	if (numbers == null)
+	    return null;
+	long[] result = new long[numbers.length];
+	for (int index = 0; index < numbers.length; index++)
+	    result[index] = toFixed(numbers[index]);
+	return result;
+    }
+
+    /**
+     * Converts the specified array of floating point numbers to an array of
+     * fixed-point numbers by converting each number separately; the
+     * function returns null if the argument is null.
+     */
+    public static long[] toFixed(double[] numbers)
+    {
+	if (numbers == null)
+	    return null;
+	long[] result = new long[numbers.length];
+	for (int index = 0; index < numbers.length; index++)
+	    result[index] = toFixed(numbers[index]);
+	return result;
+    }
+
+    /**
+     * Converts the specified fixed-point number to its floating point
+     * representation.
+     */
+    public static double toDouble(long number)
+    {
+        return (double) number / FRACTION_MULTIPLIER;
+    }
+
+    /**
+     * Converts the specified array of fixed-point numbers to an array of
+     * floating point numbers by converting each number separately; the
+     * function returns null if the argument is null.
+     */
+    public static double[] toDouble(long[] numbers)
+    {
+	if (numbers == null)
+	    return null;
+	double[] result = new double[numbers.length];
+	for (int index = 0; index < numbers.length; index++)
+	    result[index] = toDouble(numbers[index]);
+	return result;
+    }
+
+    /**
+     * Converts the specified fixed-point number to its floating point
+     * representation.
+     */
+    public static float toFloat(long number)
+    {
+        return (float) toDouble(number);
+    }
+
+    /**
+     * Converts the specified array of fixed-point numbers to an array of
+     * floating point numbers by converting each number separately; the
+     * function returns null if the argument is null.
+     */
+    public static float[] toFloat(long[] numbers)
+    {
+	if (numbers == null)
+	    return null;
+	float[] result = new float[numbers.length];
+	for (int index = 0; index < numbers.length; index++)
+	    result[index] = toFloat(numbers[index]);
+	return result;
     }
 }
