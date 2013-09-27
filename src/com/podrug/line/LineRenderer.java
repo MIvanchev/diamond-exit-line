@@ -58,12 +58,24 @@ public final class LineRenderer
     public static class Stipple
     {
         protected int stipple;
+        protected int length;
         protected int factor;
+
+        public Stipple(int stipple)
+        {
+            this(stipple, 1);
+        }
 
         public Stipple(int stipple, int factor)
         {
+            this(stipple, factor, 16);
+        }
+
+        public Stipple(int stipple, int factor, int length)
+        {
             setStipple(stipple);
             setFactor(factor);
+            setLength(length);
         }
 
         public int getStipple()
@@ -87,6 +99,19 @@ public final class LineRenderer
                 throw new IllegalArgumentException("The factor must be positive or 0.");
 
             this.factor = factor;
+        }
+
+        public int getLength()
+        {
+            return length;
+        }
+
+        public void setLength(int length)
+        {
+            if (length < 0 || length > 16)
+                throw new IllegalArgumentException("The length must be between 1 and 16 inclusive.");
+
+            this.length = length;
         }
     }
 
@@ -402,7 +427,7 @@ public final class LineRenderer
     {
         if (stipple != null)
         {
-            int stippleBit = ((int) number / stipple.factor) % 16;
+            int stippleBit = ((int) number / stipple.factor) % stipple.length;
             if (((stipple.stipple >> stippleBit) & 1) == 0)
                 return;
         }
