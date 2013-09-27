@@ -23,28 +23,26 @@
  */
 package com.podrug.line;
 
-import com.podrug.line.util.FPMath;
-import java.awt.geom.AffineTransform;
-import java.awt.geom.PathIterator;
-import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferInt;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Shape;
-import java.util.Arrays;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.PathIterator;
+
+import com.podrug.line.util.FPMath;
 
 /**
  * This static class implements a rasterizer for aliased lines based on the
- * "diamond exit" rule; this strategy ensures that 2 coincident line segments
- * are rasterized using the same set of pixels in the common region unlike the
- * popular algorithm of Bresenham and its derivates.
+ * "diamond exit" pixel-perfect rule which ensures that 2 coincident line
+ * segments highlight the same set of pixels in their common region unlike the
+ * popular algorithm of Bresenham and its many variants.
+ *
  * The "diamond exit" rule is outlined here:
- * <a href="http://goo.gl/gsBQI">Direct3D 11 Rasterization Rules</a>
+ * <a href="http://goo.gl/gsBQI">Direct3D 11 Rasterization Rules</a>.
  * <p>
- * The implementation supports only lines of thickness 1 pixel, but it's trivial
- * to extend to arbitrary thickness, e.g. using the strategy outlined here:
- * <a href="http://goo.gl/lYtiO">OpenGL 1.1 Specification &ndash; Wide Lines</a>
+ * The implementation supports wide lines and line stippling following the
+ * OpenGL 1.1 specification:
+ * <a href="http://goo.gl/z8vQYR">3.4 Line Segments</a>.
  *
  * @author Mihail Ivanchev
  */
@@ -53,6 +51,44 @@ public final class LineRenderer
     /***************************************************************************
      * HELPER TYPES                                                            *
      **************************************************************************/
+
+    /**
+     * TODO
+     */
+    public static class Stipple
+    {
+        protected int stipple;
+        protected int factor;
+
+        public Stipple(int stipple, int factor)
+        {
+            setStipple(stipple);
+            setFactor(factor);
+        }
+
+        public int getStipple()
+        {
+            return stipple;
+        }
+
+        public void setStipple(int stipple)
+        {
+            this.stipple = stipple;
+        }
+
+        public int getFactor()
+        {
+            return factor;
+        }
+
+        public void setFactor(int factor)
+        {
+            if (factor < 0)
+                throw new IllegalArgumentException("The factor must be positive or 0.");
+
+            this.factor = factor;
+        }
+    }
 
     /**
      * Encapsulates a point of the Euclidean Plane with coordinates encoded as
@@ -110,105 +146,157 @@ public final class LineRenderer
      * MEMBERS                                                                 *
      **************************************************************************/
 
-    static LineSampler sampler = new LineSampler();
+    static final LineSampler sampler = new LineSampler();
+    static int width;
     static final Point p1 = new Point();
     static final Point p2 = new Point();
-    static int width;
     static boolean xMajor;
-    static long length;
     static long a;
     static long b;
     static long c;
-    static long pathLength;
     static final AffineTransform identity = new AffineTransform();
 
-    /**
-     * TODO
-     */
-    public static void render(Graphics2D graphics, Shape shape, float width, float[] dashArray, float dashPhase)
-    {
-	PathIterator iterator = shape.getPathIterator(null);
-	double[] coords = new double[6];
-	while (iterator.isDone())
-	{
-	    int type = iterator.currentSegment(coords);
-	    if (type != PathIterator.SEG_MOVETO
-		    && type != PathIterator.SEG_LINETO
-		    && type != PathIterator.SEG_CLOSE)
-	    {
-		throw new IllegalArgumentException("The specified shape must consist only of straight line segments.");
-	    }
-	}
-	double[] first = new double[2];
-	double[] previous = new double[2];
-	while (iterator.isDone())
-	{
-	    int type = iterator.currentSegment(coords);
-	    switch (type)
-	    {
-	    case PathIterator.SEG_MOVETO:
-                first[0] = coords[0];
-                first[1] = coords[1];
-                break;
+    static int numSamples;
 
+    /**
+     * Renders the specified path to the specified graphics context using the
+     * line rasterizer.
+     *
+     * The path should only consist of straight line segments.
+     */
+    public static void render(
+            final Graphics2D graphics,
+            final Shape shape,
+            Color strokeColor,
+            float strokeWidth,
+            Stipple stipple
+            )
+    {
+        double[] coords = new double[6];
+        PathIterator iterator = shape.getPathIterator(null);
+        while (!iterator.isDone())
+        {
+            switch (iterator.currentSegment(coords))
+            {
+            case PathIterator.SEG_MOVETO:
+            case PathIterator.SEG_LINETO:
             case PathIterator.SEG_CLOSE:
-                coords[0] = first[0];
-                coords[1] = first[1];
-                //break;
+                break;
+            default:
+                throw new IllegalArgumentException("The path doesn't consist solely of straight line segments.");
+            }
+            iterator.next();
+        }
+
+        // Reset the sample counter.
+        //
+
+        numSamples = 0;
+
+        // Iterate and render each path segment.
+        //
+
+        iterator = shape.getPathIterator(null);
+        double[] initial = new double[2];
+        double[] previous = new double[2];
+
+        int type = iterator.currentSegment(coords);
+        initial[0] = coords[0];
+        initial[1] = coords[1];
+        previous[0] = coords[0];
+        previous[1] = coords[1];
+
+        while (!iterator.isDone())
+        {
+            type = iterator.currentSegment(coords);
+            switch (type)
+            {
+            case PathIterator.SEG_CLOSE:
+                coords[0] = initial[0];
+                coords[1] = initial[1];
 
             case PathIterator.SEG_LINETO:
-
+                renderLine(
+                    graphics,
+                    previous[0],
+                    previous[1],
+                    coords[0],
+                    coords[1],
+                    strokeColor,
+                    strokeWidth,
+                    stipple
+                    );
 
                 break;
-	    }
-	}
+            }
+
+            previous[0] = coords[0];
+            previous[1] = coords[1];
+            iterator.next();
+        }
     }
 
     /**
      * Renders the line with the specified coordinates to the specified graphics
-     * context.
+     * context using the line rasterizer.
      */
     public static void render(
-	    		Graphics2D graphics,
-	    		double x1,
-	    		double y1,
-	    		double x2,
-	    		double y2,
-	    		Color strokeColor,
-	    		float strokeWidth,
-	    		float[] dashArray,
-	    		float dashPhase
-	    		)
+                Graphics2D graphics,
+                double x1,
+                double y1,
+                double x2,
+                double y2,
+                Color strokeColor,
+                float strokeWidth,
+                Stipple stipple
+                )
+    {
+        // Reset the sample counter and render the line.
+        //
+
+        numSamples = 0;
+        renderLine(graphics, x1, y1, x2, y2, strokeColor, strokeWidth, stipple);
+    }
+
+    protected static void renderLine(
+                Graphics2D graphics,
+                double x1,
+                double y1,
+                double x2,
+                double y2,
+                Color strokeColor,
+                float strokeWidth,
+                Stipple stipple
+                )
     {
         if (width < 0)
             throw new IllegalArgumentException("The width cannot be negative.");
 
-	// Set an identity transform to the graphics context and transform the
+        // Set an identity transform to the graphics context and transform the
         // end points manually.
         //
 
         AffineTransform transform = graphics.getTransform();
         graphics.setTransform(identity);
 
-        double tx = x1 * transform.getScaleX() + y1 * transform.getShearX()
-                    + transform.getTranslateX();
-        double ty = x1 * transform.getShearY() + y1 * transform.getScaleY()
-                    + transform.getTranslateY();
-        x1 = tx;
-        y1 = ty;
-
-        tx = x2 * transform.getScaleX() + y2 * transform.getShearX()
+        double tx1 = x1 * transform.getScaleX() + y1 * transform.getShearX()
+                        + transform.getTranslateX();
+        double ty1 = x1 * transform.getShearY() + y1 * transform.getScaleY()
+                        + transform.getTranslateY();
+        double tx2 = x2 * transform.getScaleX() + y2 * transform.getShearX()
                 + transform.getTranslateX();
-        ty = x2 * transform.getShearY() + y2 * transform.getScaleY()
-                + transform.getTranslateY();
-        x2 = tx;
-        y2 = ty;
+        double ty2 = x2 * transform.getShearY() + y2 * transform.getScaleY()
+                    + transform.getTranslateY();
 
-        // Classify, offset to account for the width and extract the bounding box.
+        x1 = tx1;
+        y1 = ty1;
+        x2 = tx2;
+        y2 = ty2;
+
+        // Classify the line and correct the position for the requested width.
         //
 
         xMajor = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
- 
         width = (int) Math.max(Math.round(strokeWidth), 1);
 
         if (xMajor)
@@ -222,24 +310,23 @@ public final class LineRenderer
             x2 -= (width - 1) / 2;
         }
 
+        // Extract the bounding box, classify the line and push the end points
+        // 0.5 pixels to the right and to the bottom. Thus, a line which is
+        // coincident with the border between 2 pixel rows will highlight the
+        // bottom row.
+        //
+
         double minX = Math.min(x1, x2);
         double minY = Math.min(y1, y2);
         double maxX = Math.max(x1, x2);
         double maxY = Math.max(y1, y2);
 
-        // Offset the line end points half a pixel to the right and to the
-        // bottom. Thus, a line coincident with the border between 2 pixel rows
-        // will highly the bottom row.
-        //
-
-        double offset = 0.5;
+        double offset = 0;
         p1.setLocation(FPMath.toFixed(x1 + offset), FPMath.toFixed(y1 + offset));
         p2.setLocation(FPMath.toFixed(x2 + offset), FPMath.toFixed(y2 + offset));
 
-        // Calculate the length and extract the standard form.
+        // Extract the standard form.
         //
-
-        length = FPMath.sqrt(FPMath.sqr(p2.x - p1.x) + FPMath.sqr(p2.y - p1.y));
 
         if (p2.x != p1.x)
         {
@@ -254,33 +341,54 @@ public final class LineRenderer
             c = p1.x;
         }
 
-        // Rasterize the line and then restore the graphics context transform.
+        // Rasterize the line.
         //
 
-        int bufferWidth = (int) (Math.ceil(maxX) - Math.floor(minX)) + (!xMajor ? width : 1);
-        int bufferHeight = (int) (Math.ceil(maxY) - Math.floor(minY)) + (xMajor ? width : 1);
+        int bufferWidth = (int) (Math.ceil(maxX) - Math.floor(minX)) + 1;
+        int bufferHeight = (int) (Math.ceil(maxY) - Math.floor(minY)) + 1;
         int positionX = (int) Math.floor(minX);
         int positionY = (int) Math.floor(minY);
 
-        sampler.setColor(strokeColor);
-        sampler.setDashArray(FPMath.toFixed(dashArray));
-        sampler.setDashPhase(FPMath.toFixed(dashPhase));
-        sampler.setBufferDimensions(bufferWidth, bufferHeight);
-        for (int j = 0, y = positionY; j < bufferHeight; j++, y++)
+        sampler.setStrokeColor(strokeColor);
+        sampler.setBufferDimensions(
+                bufferWidth + (!xMajor ? (width - 1) : 0),
+                bufferHeight + (xMajor ? (width - 1) : 0)
+                );
+
+        int sampleY = 0;
+        int sampleLastY = bufferHeight;
+        int sampleStepY = 1;
+        if (y1 > y2)
         {
-            for (int i = 0, x = positionX; i < bufferWidth; i++, x++)
+            sampleY = bufferHeight - 1;
+            sampleLastY = -1;
+            sampleStepY = -1;
+        }
+
+        while (sampleY != sampleLastY)
+        {
+            int sampleX = 0;
+            int sampleLastX = bufferWidth;
+            int sampleStepX = 1;
+            if (x1 > x2)
             {
-        	if (!belongsToRepresentation(x, y))
-        	    continue;
-        	
-        	for (int index = 0; index < width; index++)
-        	{
-        	    if (xMajor)
-        		sampler.sample(i, j + index, calculateDistance(x, y + index), 0);
-        	    else
-        		sampler.sample(i + index, j, calculateDistance(x + index, y), 0);
-        	}
+                sampleX = bufferWidth - 1;
+                sampleLastX = -1;
+                sampleStepX = -1;
             }
+
+            while (sampleX != sampleLastX)
+            {
+                int pixelX = sampleX + positionX;
+                int pixelY = sampleY + positionY;
+
+                if (belongsToRepresentation(pixelX, pixelY))
+                    renderSample(sampleX, sampleY, numSamples++, stipple);
+
+                sampleX += sampleStepX;
+            }
+
+            sampleY += sampleStepY;
         }
 
         sampler.drawBuffer(graphics, null, positionX, positionY);
@@ -288,12 +396,33 @@ public final class LineRenderer
     }
 
     /**
+     * TODO
+     */
+    static void renderSample(int sampleX, int sampleY, int number, Stipple stipple)
+    {
+        if (stipple != null)
+        {
+            int stippleBit = ((int) number / stipple.factor) % 16;
+            if (((stipple.stipple >> stippleBit) & 1) == 0)
+                return;
+        }
+
+        for (int index = 0; index < width; index++)
+        {
+            if (xMajor)
+                sampler.sample(sampleX, sampleY + index);
+            else
+                sampler.sample(sampleX + index, sampleY);
+        }
+    }
+
+    /**
      * Returns true if the pixel whose top-left corner is given by the specified
      * coordinates is part of the line's representation, false otherwise.
-     * 
+     *
      * The pixel will belong to the line's representation if and only if the
      * line has a common point with the diamond region around the pixel's center
-     * as governed by implemented specification. 
+     * as governed by implemented specification.
      */
     static boolean belongsToRepresentation(int x, int y)
     {
@@ -451,17 +580,5 @@ public final class LineRenderer
         long denominator = FPMath.mul(a, a) + FPMath.mul(b, b);
 
         return FPMath.mul(numenator, numenator) > FPMath.mul(FPMath.QUARTER, denominator);
-    }
-
-    /**
-     * TODO
-     */
-    static long calculateDistance(int x, int y)
-    {
-	long cx = FPMath.toFixed(x) + FPMath.HALF;
-	long cy = FPMath.toFixed(y) + FPMath.HALF;
-	long numenator = FPMath.mul(cx - p1.x, p2.x - p1.x)
-				+ FPMath.mul(cy - p1.y, p2.y - p1.y);
-	return FPMath.div(numenator, length);
     }
 }

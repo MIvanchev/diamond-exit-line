@@ -12,22 +12,12 @@ import com.podrug.line.util.IllegalOperationException;
 /**
  * TODO
  */
-public class LineSampler {
-
+public class LineSampler
+{
     /**
      * TODO
      */
-    long[] dashArray;
-
-    /**
-     * TODO
-     */
-    long dashPhase;
-
-    /**
-     * TODO
-     */
-    Color color;
+    Color strokeColor;
 
     BufferedImage buffer;
     int[] bufferData;
@@ -35,8 +25,9 @@ public class LineSampler {
     /**
      * TODO
      */
-    public LineSampler()  {
-	color = Color.BLACK;
+    public LineSampler()
+    {
+        strokeColor = Color.BLACK;
     }
 
     /**
@@ -46,7 +37,7 @@ public class LineSampler {
     {
         buffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         bufferData = ((DataBufferInt) buffer.getRaster().getDataBuffer()).getData();
-        Arrays.fill(bufferData, 0);
+        Arrays.fill(bufferData, 0xFFFFFF00);
     }
 
     /**
@@ -54,99 +45,35 @@ public class LineSampler {
      */
     public void drawBuffer(Graphics2D graphics, BufferedImageOp op, int x, int y)
     {
-	if (buffer == null)
-	    throw new IllegalOperationException("The buffer has not yet been initialized");
-	
-	graphics.drawImage(buffer, op, x, y);
+        if (buffer == null)
+            throw new IllegalOperationException("The buffer has not yet been initialized");
+
+        graphics.drawImage(buffer, op, x, y);
     }
 
     /**
      * TODO
      */
-    public void sample(int x, int y, long distance, long dashPhaseOffset)
+    public void sample(int x, int y)
     {
-        if (belongsToVisibleDash(distance, dashPhaseOffset))
-        {
-            int value = color.getRGB();
-            bufferData[y * buffer.getWidth() + x] = value;
-        }
+        int value = strokeColor.getRGB();
+        bufferData[y * buffer.getWidth() + x] = value;
     }
 
-    /**
-     * TODO
-     */
-    boolean belongsToVisibleDash(long distance, long phaseOffset)
-    {
-	if (dashArray == null)
-	    return true;
-
-	distance += dashPhase;
-	distance += phaseOffset;
-
-        int index = 0;
-        long total = 0;
-
-        while (distance < total || distance >= total + dashArray[index])
-        {
-            total += dashArray[index];
-            index = ++index % dashArray.length;
-        }
-
-        return (index % 2) == 0;
-    }
- 
     /***************************************************************************
      * PROPERTY ACCESSORS                                                      *
      **************************************************************************/
 
-    public long[] getDashArray() {
-	return dashArray;
+    public Color getStrokeColor()
+    {
+        return strokeColor;
     }
 
-    public void setDashArray(long[] dashArray) {
-	if (dashArray == null)
-	{
-	    this.dashArray = null;
-	    return;
-	}
+    public void setStrokeColor(Color strokeColor)
+    {
+        if (strokeColor == null)
+            throw new IllegalArgumentException("The stroke color cannot be null.");
 
-	if (dashArray.length == 0)
-	    throw new IllegalArgumentException("The dash array cannot be empty.");
-	
-	boolean allZero = true;
-	for (long element : dashArray)
-	{
-	    if (element < 0)
-		throw new IllegalArgumentException("The dash lengths cannot be negative.");
-	    else if (element > 0)
-		allZero = false;
-	}
-	
-	if (allZero)
-	    throw new IllegalArgumentException("At least 1 dash length must greater than 0.");
-
-	this.dashArray = dashArray;
-    }
-
-    public long getDashPhase() {
-	return dashPhase;
-    }
-
-    public void setDashPhase(long dashPhase) {
-	if (dashPhase < 0)
-	    throw new IllegalArgumentException("The phase must be positive or 0.");
-
-	this.dashPhase = dashPhase;
-    }
-
-    public Color getColor() {
-	return color;
-    }
-
-    public void setColor(Color color) {
-	if (color == null)
-	    throw new IllegalArgumentException("The color cannot be null.");
-
-	this.color = color;
+        this.strokeColor = strokeColor;
     }
 }
