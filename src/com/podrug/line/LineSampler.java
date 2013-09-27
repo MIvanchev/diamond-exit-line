@@ -37,7 +37,7 @@ public class LineSampler
     {
         buffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         bufferData = ((DataBufferInt) buffer.getRaster().getDataBuffer()).getData();
-        Arrays.fill(bufferData, 0xFFFFFF00);
+        Arrays.fill(bufferData, 0);
     }
 
     /**
