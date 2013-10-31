@@ -371,8 +371,8 @@ public final class LineRenderer
 
         int bufferWidth = (int) (Math.ceil(maxX) - Math.floor(minX)) + 1;
         int bufferHeight = (int) (Math.ceil(maxY) - Math.floor(minY)) + 1;
-        int positionX = (int) Math.floor(minX);
-        int positionY = (int) Math.floor(minY);
+        int positionX = (int) Math.floor(minX) - 1;
+        int positionY = (int) Math.floor(minY) - 1;
 
         sampler.setStrokeColor(strokeColor);
         sampler.setBufferDimensions(
